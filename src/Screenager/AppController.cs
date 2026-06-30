@@ -40,7 +40,8 @@ public sealed class AppController : IDisposable
 
         _tracker = new ActivityTracker(_db, cfg, _clock);
         _focus = new FocusTracker(_db, _clock) { ShouldCount = () => _last is { Paused: false } };
-        _timerWindow = new TimerWindow(cfg.WarnSeconds);
+        _timerWindow = new TimerWindow(cfg.WarnSeconds, LoadTimerLocation());
+        _timerWindow.Moved += SaveTimerLocation;
         _warning = new WarningWindow();
         _timeUp = new TimeUpWindow();
         _enforcer = new Enforcer();
@@ -64,10 +65,31 @@ public sealed class AppController : IDisposable
         _tracker.Start();
     }
 
+    private Point? LoadTimerLocation()
+    {
+        if (int.TryParse(_db.GetMeta("timer_x"), out var x) && int.TryParse(_db.GetMeta("timer_y"), out var y))
+            return new Point(x, y);
+        return null;
+    }
+
+    private void SaveTimerLocation(Point p)
+    {
+        _db.SetMeta("timer_x", p.X.ToString());
+        _db.SetMeta("timer_y", p.Y.ToString());
+    }
+
     private void OnState(TrackerSnapshot s)
     {
         _last = s;
         _timerWindow.UpdateState(s);
+
+        // While the parent override dialog is open, suspend all enforcement so the parent has
+        // time to enter the PIN and grant/revoke without the screen locking out from under them.
+        if (_override.DialogOpen)
+        {
+            _warning.HideWarning();
+            return;
+        }
 
         if (_locked || _relockPending)
             return;

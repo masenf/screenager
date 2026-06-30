@@ -36,6 +36,10 @@ public sealed class ActivityTracker : IDisposable
     private bool _expired;
     private int _ticksSinceSave;
 
+    // Wall-clock instant until which an active parent override suppresses bedtime locking.
+    private const string OverrideUntilKey = "override_until";
+    private DateTime _overrideUntil = DateTime.MinValue;
+
     public bool Locked { get; set; }
     public bool Suspended { get; set; }
 
@@ -52,12 +56,28 @@ public sealed class ActivityTracker : IDisposable
         _activeSeconds = usage.ActiveSeconds;
         _bonusSeconds = usage.BonusSeconds;
         _expired = usage.Expired;
+        _overrideUntil = LoadOverrideUntil();
 
         _timer = new System.Windows.Forms.Timer { Interval = TickMs };
         _timer.Tick += (_, _) => OnTick();
     }
 
     public int BudgetSeconds => _cfg.DailyMinutes * 60 + _bonusSeconds;
+
+    /// <summary>Total extra time granted today (seconds), shown in the override dialog.</summary>
+    public int GrantedBonusSeconds => _bonusSeconds;
+
+    /// <summary>True while a parent override is in effect (bedtime suppressed).</summary>
+    public bool OverrideActive => DateTime.Now < _overrideUntil;
+
+    private DateTime LoadOverrideUntil()
+    {
+        var raw = _db.GetMeta(OverrideUntilKey);
+        return DateTime.TryParse(raw, null, System.Globalization.DateTimeStyles.RoundtripKind, out var dt)
+            ? dt : DateTime.MinValue;
+    }
+
+    private bool IsBedtimeNow(DateTime now) => _clock.IsBedtime(now) && now >= _overrideUntil;
 
     public void Start()
     {
@@ -66,12 +86,22 @@ public sealed class ActivityTracker : IDisposable
         OnTick();
     }
 
-    /// <summary>Grant extra minutes for today (parent override). Persists immediately.</summary>
+    /// <summary>
+    /// Grant extra minutes for today (parent override). Extends the active-time budget and the
+    /// bedtime-suppression window, and clears the expired flag. Persists immediately.
+    /// </summary>
     public void AddBonusMinutes(int minutes)
     {
-        if (minutes == 0) return;
+        if (minutes <= 0) return;
         _bonusSeconds += minutes * 60;
         _db.AddBonusSeconds(_day, minutes * 60);
+
+        // Suppress bedtime for the granted span (wall-clock), stacking on any existing override.
+        var now = DateTime.Now;
+        var basis = _overrideUntil > now ? _overrideUntil : now;
+        _overrideUntil = basis.AddMinutes(minutes);
+        _db.SetMeta(OverrideUntilKey, _overrideUntil.ToString("o"));
+
         if (BudgetSeconds - (int)_activeSeconds > 0)
         {
             _expired = false;
@@ -80,10 +110,20 @@ public sealed class ActivityTracker : IDisposable
         OnTick();
     }
 
+    /// <summary>Revoke all extra time granted today and end any bedtime-suppression window.</summary>
+    public void RevokeBonus()
+    {
+        _bonusSeconds = 0;
+        _db.SetBonusSeconds(_day, 0);
+        _overrideUntil = DateTime.MinValue;
+        _db.SetMeta(OverrideUntilKey, _overrideUntil.ToString("o"));
+        OnTick();
+    }
+
     public TrackerSnapshot Snapshot()
     {
         var now = DateTime.Now;
-        bool bedtime = _clock.IsBedtime(now);
+        bool bedtime = IsBedtimeNow(now);
         bool paused = Locked || Suspended || NativeMethods.GetIdleSeconds() >= _cfg.IdleThresholdSeconds;
         int active = (int)Math.Round(_activeSeconds);
         int remaining = Math.Max(0, BudgetSeconds - active);
@@ -102,7 +142,7 @@ public sealed class ActivityTracker : IDisposable
         if (today != _day)
             RollToDay(today);
 
-        bool bedtime = _clock.IsBedtime(now);
+        bool bedtime = IsBedtimeNow(now);
         bool paused = Locked || Suspended || NativeMethods.GetIdleSeconds() >= _cfg.IdleThresholdSeconds;
 
         if (!paused && !bedtime)

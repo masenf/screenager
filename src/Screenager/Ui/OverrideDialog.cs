@@ -1,7 +1,10 @@
 namespace Screenager.Ui;
 
+public enum OverrideAction { Cancel, Grant, Revoke }
+
 /// <summary>
-/// PIN-gated parent dialog to grant bonus minutes for the rest of the day.
+/// PIN-gated parent dialog: grant bonus minutes for the rest of the day, or revoke all extra
+/// time already granted. Shows how much has been granted so far.
 /// </summary>
 public sealed class OverrideDialog : Form
 {
@@ -10,9 +13,10 @@ public sealed class OverrideDialog : Form
     private readonly NumericUpDown _minutes;
     private readonly Label _error;
 
+    public OverrideAction Action { get; private set; } = OverrideAction.Cancel;
     public int GrantedMinutes { get; private set; }
 
-    public OverrideDialog(string pin)
+    public OverrideDialog(string pin, int grantedSecondsToday)
     {
         _pin = pin;
 
@@ -22,32 +26,86 @@ public sealed class OverrideDialog : Form
         MaximizeBox = false;
         MinimizeBox = false;
         TopMost = true;
-        ClientSize = new Size(320, 200);
-        Font = new Font("Segoe UI", 10f);
+        Font = new Font("Segoe UI", 9.75f);
+        ClientSize = new Size(360, 210);
+        Padding = new Padding(16);
 
-        Controls.Add(new Label { Text = "Parent PIN:", Left = 16, Top = 18, Width = 120 });
-        _pinBox = new TextBox { Left = 140, Top = 15, Width = 150, UseSystemPasswordChar = true };
-        Controls.Add(_pinBox);
+        var layout = new TableLayoutPanel
+        {
+            Dock = DockStyle.Fill,
+            ColumnCount = 2,
+            RowCount = 4,
+            AutoSize = true,
+        };
+        layout.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 110));
+        layout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
+        for (int i = 0; i < 3; i++)
+            layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 40));
+        layout.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
 
-        Controls.Add(new Label { Text = "Add minutes:", Left = 16, Top = 58, Width = 120 });
-        _minutes = new NumericUpDown { Left = 140, Top = 55, Width = 150, Minimum = 1, Maximum = 1440, Value = 30 };
-        Controls.Add(_minutes);
+        int grantedMin = grantedSecondsToday / 60;
+        var granted = new Label
+        {
+            Text = grantedMin > 0
+                ? $"Extra time granted today: {grantedMin} min"
+                : "No extra time granted today.",
+            ForeColor = grantedMin > 0 ? Color.DarkGreen : SystemColors.GrayText,
+            AutoSize = false,
+            Dock = DockStyle.Fill,
+            TextAlign = ContentAlignment.MiddleLeft,
+            Font = new Font(Font, FontStyle.Bold),
+        };
+        layout.Controls.Add(granted, 0, 0);
+        layout.SetColumnSpan(granted, 2);
 
-        _error = new Label { Left = 16, Top = 92, Width = 288, ForeColor = Color.Firebrick };
+        layout.Controls.Add(MakeLabel("Parent PIN:"), 0, 1);
+        _pinBox = new TextBox { Dock = DockStyle.Fill, UseSystemPasswordChar = true, Anchor = AnchorStyles.Left | AnchorStyles.Right };
+        layout.Controls.Add(Wrap(_pinBox), 1, 1);
+
+        layout.Controls.Add(MakeLabel("Add minutes:"), 0, 2);
+        _minutes = new NumericUpDown { Dock = DockStyle.Fill, Minimum = 1, Maximum = 1440, Value = 30, Anchor = AnchorStyles.Left | AnchorStyles.Right };
+        layout.Controls.Add(Wrap(_minutes), 1, 2);
+
+        var buttons = new FlowLayoutPanel
+        {
+            Dock = DockStyle.Fill,
+            FlowDirection = FlowDirection.RightToLeft,
+            WrapContents = false,
+        };
+        var cancel = new Button { Text = "Cancel", Width = 80, DialogResult = DialogResult.Cancel };
+        var revoke = new Button { Text = "Revoke", Width = 80, Enabled = grantedMin > 0 };
+        var grant = new Button { Text = "Grant", Width = 80 };
+        grant.Click += (_, _) => Submit(OverrideAction.Grant);
+        revoke.Click += (_, _) => Submit(OverrideAction.Revoke);
+        buttons.Controls.Add(cancel);
+        buttons.Controls.Add(revoke);
+        buttons.Controls.Add(grant);
+        layout.Controls.Add(buttons, 0, 3);
+        layout.SetColumnSpan(buttons, 2);
+
+        _error = new Label { Dock = DockStyle.Bottom, Height = 20, ForeColor = Color.Firebrick, TextAlign = ContentAlignment.MiddleLeft };
+
+        // Add the docked-Bottom control first, then the Fill control, so Fill takes the remaining space.
         Controls.Add(_error);
+        Controls.Add(layout);
 
-        var ok = new Button { Text = "Grant", Left = 140, Top = 130, Width = 70, DialogResult = DialogResult.None };
-        ok.Click += OnGrant;
-        Controls.Add(ok);
-
-        var cancel = new Button { Text = "Cancel", Left = 220, Top = 130, Width = 70, DialogResult = DialogResult.Cancel };
-        Controls.Add(cancel);
-
-        AcceptButton = ok;
+        AcceptButton = grant;
         CancelButton = cancel;
+        ActiveControl = _pinBox;
     }
 
-    private void OnGrant(object? sender, EventArgs e)
+    private static Label MakeLabel(string text) => new()
+    {
+        Text = text,
+        Dock = DockStyle.Fill,
+        TextAlign = ContentAlignment.MiddleLeft,
+        AutoSize = false,
+    };
+
+    // Vertically center a single-line control inside its 40px cell.
+    private static Panel Wrap(Control c) => new() { Dock = DockStyle.Fill, Padding = new Padding(0, 8, 0, 8), Controls = { c } };
+
+    private void Submit(OverrideAction action)
     {
         if (string.IsNullOrEmpty(_pin) || _pinBox.Text != _pin)
         {
@@ -56,7 +114,8 @@ public sealed class OverrideDialog : Form
             _pinBox.Focus();
             return;
         }
-        GrantedMinutes = (int)_minutes.Value;
+        Action = action;
+        GrantedMinutes = action == OverrideAction.Grant ? (int)_minutes.Value : 0;
         DialogResult = DialogResult.OK;
         Close();
     }

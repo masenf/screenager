@@ -14,11 +14,20 @@ public sealed class TimerWindow : Form
     private const int WS_EX_NOACTIVATE = 0x08000000;
 
     private readonly Label _label;
-    private int _warnSeconds;
+    private readonly int _warnSeconds;
+    private readonly Point? _initialLocation;
 
-    public TimerWindow(int warnSeconds)
+    private bool _dragging;
+    private Point _dragStartScreen;
+    private Point _dragStartWindow;
+
+    /// <summary>Raised when the user finishes dragging the window, with the new location.</summary>
+    public event Action<Point>? Moved;
+
+    public TimerWindow(int warnSeconds, Point? initialLocation)
     {
         _warnSeconds = warnSeconds;
+        _initialLocation = initialLocation;
 
         FormBorderStyle = FormBorderStyle.None;
         ShowInTaskbar = false;
@@ -26,6 +35,7 @@ public sealed class TimerWindow : Form
         StartPosition = FormStartPosition.Manual;
         BackColor = Color.FromArgb(24, 24, 28);
         Size = new Size(120, 48);
+        Cursor = Cursors.SizeAll; // hint that it can be dragged
 
         _label = new Label
         {
@@ -34,18 +44,38 @@ public sealed class TimerWindow : Form
             Font = new Font("Segoe UI", 16f, FontStyle.Bold),
             TextAlign = ContentAlignment.MiddleCenter,
             Text = "--:--",
+            Cursor = Cursors.SizeAll,
         };
         Controls.Add(_label);
 
-        // Let the parent drag it around if they want.
-        _label.MouseDown += (_, e) =>
-        {
-            if (e.Button == MouseButtons.Left)
-            {
-                NativeMethods.SetWindowPos(Handle, NativeMethods.HWND_TOPMOST, 0, 0, 0, 0,
-                    NativeMethods.SWP_NOMOVE | NativeMethods.SWP_NOSIZE | NativeMethods.SWP_NOACTIVATE);
-            }
-        };
+        // Drag anywhere on the window to move it (it never takes focus, so we move it manually).
+        _label.MouseDown += OnDragStart;
+        _label.MouseMove += OnDragMove;
+        _label.MouseUp += OnDragEnd;
+    }
+
+    private void OnDragStart(object? sender, MouseEventArgs e)
+    {
+        if (e.Button != MouseButtons.Left) return;
+        _dragging = true;
+        _dragStartScreen = Cursor.Position;
+        _dragStartWindow = Location;
+    }
+
+    private void OnDragMove(object? sender, MouseEventArgs e)
+    {
+        if (!_dragging) return;
+        var now = Cursor.Position;
+        Location = new Point(
+            _dragStartWindow.X + (now.X - _dragStartScreen.X),
+            _dragStartWindow.Y + (now.Y - _dragStartScreen.Y));
+    }
+
+    private void OnDragEnd(object? sender, MouseEventArgs e)
+    {
+        if (!_dragging) return;
+        _dragging = false;
+        Moved?.Invoke(Location);
     }
 
     protected override bool ShowWithoutActivation => true;
@@ -63,13 +93,26 @@ public sealed class TimerWindow : Form
     protected override void OnShown(EventArgs e)
     {
         base.OnShown(e);
-        PositionBottomRight();
+        if (_initialLocation is { } loc && IsOnAnyScreen(loc))
+            Location = loc;
+        else
+            PositionBottomRight();
     }
 
     private void PositionBottomRight()
     {
         var wa = Screen.PrimaryScreen!.WorkingArea;
         Location = new Point(wa.Right - Width - 16, wa.Bottom - Height - 16);
+    }
+
+    // Guard against a saved position that is off-screen (e.g. a monitor was unplugged).
+    private bool IsOnAnyScreen(Point loc)
+    {
+        var rect = new Rectangle(loc, Size);
+        foreach (var screen in Screen.AllScreens)
+            if (screen.WorkingArea.IntersectsWith(rect))
+                return true;
+        return false;
     }
 
     public void UpdateState(TrackerSnapshot s)

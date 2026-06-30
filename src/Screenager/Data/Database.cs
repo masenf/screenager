@@ -100,6 +100,18 @@ public sealed class Database : IDisposable
         cmd.ExecuteNonQuery();
     }
 
+    public void SetBonusSeconds(string day, int seconds)
+    {
+        using var cmd = _conn.CreateCommand();
+        cmd.CommandText = """
+            INSERT INTO daily_usage(day, bonus_seconds) VALUES($d, $s)
+            ON CONFLICT(day) DO UPDATE SET bonus_seconds=$s;
+        """;
+        cmd.Parameters.AddWithValue("$d", day);
+        cmd.Parameters.AddWithValue("$s", seconds);
+        cmd.ExecuteNonQuery();
+    }
+
     public void SetExpired(string day, bool expired)
     {
         using var cmd = _conn.CreateCommand();

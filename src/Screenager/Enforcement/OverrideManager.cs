@@ -18,6 +18,9 @@ public sealed class OverrideManager : IDisposable
     private bool _registered;
     private bool _dialogOpen;
 
+    /// <summary>True while the override dialog is open; the controller suspends locking meanwhile.</summary>
+    public bool DialogOpen => _dialogOpen;
+
     public OverrideManager(IntPtr hwnd, ActivityTracker tracker, Config cfg)
     {
         _hwnd = hwnd;
@@ -36,9 +39,14 @@ public sealed class OverrideManager : IDisposable
         _dialogOpen = true;
         try
         {
-            using var dlg = new OverrideDialog(_pin);
-            if (dlg.ShowDialog() == DialogResult.OK && dlg.GrantedMinutes > 0)
-                _tracker.AddBonusMinutes(dlg.GrantedMinutes);
+            using var dlg = new OverrideDialog(_pin, _tracker.GrantedBonusSeconds);
+            if (dlg.ShowDialog() == DialogResult.OK)
+            {
+                if (dlg.Action == OverrideAction.Grant && dlg.GrantedMinutes > 0)
+                    _tracker.AddBonusMinutes(dlg.GrantedMinutes);
+                else if (dlg.Action == OverrideAction.Revoke)
+                    _tracker.RevokeBonus();
+            }
         }
         finally
         {
