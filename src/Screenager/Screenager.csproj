@@ -11,13 +11,19 @@
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     <AssemblyName>screenager</AssemblyName>
     <RootNamespace>Screenager</RootNamespace>
-    <ApplicationManifest>app.manifest</ApplicationManifest>
+
+    <!-- No custom app.manifest: the SDK embeds its known-good default. DPI awareness is
+         applied at runtime by ApplicationConfiguration.Initialize() from this property,
+         and asInvoker is already the default execution level. -->
+    <ApplicationHighDpiMode>PerMonitorV2</ApplicationHighDpiMode>
 
     <!-- Single-file, self-contained publish defaults (CLI can still override) -->
     <RuntimeIdentifier>win-x64</RuntimeIdentifier>
     <SelfContained>true</SelfContained>
     <PublishSingleFile>true</PublishSingleFile>
     <IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract>
+    <!-- Compress the bundled runtime so the on-disk exe is ~half the size. -->
+    <EnableCompressionInSingleFile>true</EnableCompressionInSingleFile>
     <!-- WinForms does not trim cleanly; keep trimming off. -->
     <PublishTrimmed>false</PublishTrimmed>
     <InvariantGlobalization>true</InvariantGlobalization>
