@@ -15,17 +15,27 @@ public sealed class OverrideManager : IDisposable
     private readonly IntPtr _hwnd;
     private readonly ActivityTracker _tracker;
     private readonly string _pin;
+    private readonly int _graceSeconds;
     private bool _registered;
     private bool _dialogOpen;
+    private DateTime _openedAt;
 
-    /// <summary>True while the override dialog is open; the controller suspends locking meanwhile.</summary>
+    /// <summary>True while the override dialog is open.</summary>
     public bool DialogOpen => _dialogOpen;
+
+    /// <summary>
+    /// True while locking should be suspended: the dialog is open AND we are still within the
+    /// configured grace period since it opened. Bounded so the dialog can't be left open to
+    /// indefinitely dodge a lock.
+    /// </summary>
+    public bool LockSuppressed => _dialogOpen && (DateTime.Now - _openedAt).TotalSeconds < _graceSeconds;
 
     public OverrideManager(IntPtr hwnd, ActivityTracker tracker, Config cfg)
     {
         _hwnd = hwnd;
         _tracker = tracker;
         _pin = cfg.OverridePin;
+        _graceSeconds = cfg.OverrideGraceSeconds;
 
         if (TryParseHotkey(cfg.OverrideHotkey, out uint mods, out uint vk) && _pin.Length > 0)
             _registered = NativeMethods.RegisterHotKey(_hwnd, HotKeyId, mods | NativeMethods.MOD_NOREPEAT, vk);
@@ -37,6 +47,7 @@ public sealed class OverrideManager : IDisposable
             return;
 
         _dialogOpen = true;
+        _openedAt = DateTime.Now;
         try
         {
             using var dlg = new OverrideDialog(_pin, _tracker.GrantedBonusSeconds);

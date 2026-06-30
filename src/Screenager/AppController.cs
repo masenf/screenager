@@ -25,9 +25,12 @@ public sealed class AppController : IDisposable
     private readonly OverrideManager _override;
     private readonly ReportScheduler _scheduler;
 
+    private const int RelockDelaySeconds = 4; // how long the "time is up" message shows before re-locking
+
     private TrackerSnapshot? _last;
     private bool _locked;
     private bool _relockPending;
+    private DateTime _relockAt;
 
     public AppController(Config cfg, string dbPath)
     {
@@ -54,7 +57,6 @@ public sealed class AppController : IDisposable
         _msg.SystemResume += OnResume;
         _msg.HotKeyPressed += id => _override.OnHotKey(id);
         _tracker.StateChanged += OnState;
-        _timeUp.Elapsed += OnTimeUpElapsed;
     }
 
     public void Start()
@@ -83,16 +85,46 @@ public sealed class AppController : IDisposable
         _last = s;
         _timerWindow.UpdateState(s);
 
-        // While the parent override dialog is open, suspend all enforcement so the parent has
-        // time to enter the PIN and grant/revoke without the screen locking out from under them.
-        if (_override.DialogOpen)
+        // A grant (or anything that makes us no-longer-expired) cancels a pending re-lock so the
+        // screen does not lock again after the parent has just added time.
+        if (!s.Expired && _relockPending)
+        {
+            _relockPending = false;
+            _timeUp.Cancel();
+        }
+
+        // While the override dialog is open, suspend locking for the grace period so the parent
+        // can enter the PIN without being rushed — but only for that bounded window, so the dialog
+        // can't simply be left open to dodge the lock.
+        if (_override.LockSuppressed)
         {
             _warning.HideWarning();
             return;
         }
 
-        if (_locked || _relockPending)
+        // Pending re-lock after an unlock-while-expired: lock once the brief message has shown.
+        if (_relockPending)
+        {
+            if (DateTime.Now >= _relockAt)
+            {
+                _relockPending = false;
+                _timeUp.Cancel();
+                if (s.Expired)
+                    _enforcer.Lock();
+            }
             return;
+        }
+
+        if (_locked)
+            return;
+
+        // Dialog open but grace elapsed: don't fight over the warning; just enforce if expired.
+        if (_override.DialogOpen)
+        {
+            if (s.Expired)
+                _enforcer.Lock();
+            return;
+        }
 
         bool inWarnWindow = !s.Bedtime && s.RemainingSeconds > 0 && s.RemainingSeconds <= _cfg.WarnSeconds;
         if (inWarnWindow)
@@ -136,15 +168,9 @@ public sealed class AppController : IDisposable
     private void BeginRelock()
     {
         _relockPending = true;
+        _relockAt = DateTime.Now.AddSeconds(RelockDelaySeconds);
         _warning.HideWarning();
-        _timeUp.Flash();
-    }
-
-    private void OnTimeUpElapsed()
-    {
-        // Allow the normal OnState path to retry the lock if this one is rate-limited.
-        _relockPending = false;
-        _enforcer.Lock();
+        _timeUp.Flash(RelockDelaySeconds);
     }
 
     public void Dispose()

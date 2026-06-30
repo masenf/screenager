@@ -24,7 +24,8 @@ Built for a single family PC: C# / .NET 10, published as a **self-contained sing
 - **Parent override.** Press the hotkey (default `Ctrl+Alt+Shift+S`), enter your PIN, and grant
   extra minutes for today (or revoke previously-granted time). While any granted time is still
   active, the **bedtime cutoff is suspended** too. The dialog shows how much extra has been
-  granted today, and enforcement is paused while the dialog is open so you're never rushed.
+  granted today, and locking is paused for a configurable grace period (`grace_seconds`,
+  default 30s) while the dialog is open so you're never rushed.
 - **Movable countdown.** Drag the countdown window anywhere; its position is remembered.
 - **Daily report.** At `send_hour` it emails (via the Mailgun HTTP API) a summary: time used,
   most-used windows, videos watched, and sites visited (read from Chrome/Edge/Firefox history).

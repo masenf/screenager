@@ -35,6 +35,7 @@ public sealed class ActivityTracker : IDisposable
     private int _bonusSeconds;
     private bool _expired;
     private int _ticksSinceSave;
+    private int _lastSavedActive;
 
     // Wall-clock instant until which an active parent override suppresses bedtime locking.
     private const string OverrideUntilKey = "override_until";
@@ -54,6 +55,7 @@ public sealed class ActivityTracker : IDisposable
         _day = _clock.Today();
         var usage = _db.GetUsage(_day);
         _activeSeconds = usage.ActiveSeconds;
+        _lastSavedActive = usage.ActiveSeconds;
         _bonusSeconds = usage.BonusSeconds;
         _expired = usage.Expired;
         _overrideUntil = LoadOverrideUntil();
@@ -158,9 +160,15 @@ public sealed class ActivityTracker : IDisposable
             _db.SetExpired(_day, true);
         }
 
-        if (++_ticksSinceSave >= SaveEveryTicks || (paused && _ticksSinceSave > 0))
+        // Persist at most every SaveEveryTicks, and only when the value actually changed. While
+        // paused/idle the counter doesn't move, so this writes nothing (no idle DB churn).
+        if (++_ticksSinceSave >= SaveEveryTicks)
         {
-            _db.SetActiveSeconds(_day, active);
+            if (active != _lastSavedActive)
+            {
+                _db.SetActiveSeconds(_day, active);
+                _lastSavedActive = active;
+            }
             _ticksSinceSave = 0;
         }
 
@@ -174,6 +182,7 @@ public sealed class ActivityTracker : IDisposable
         _day = newDay;
         var usage = _db.GetUsage(newDay);
         _activeSeconds = usage.ActiveSeconds;
+        _lastSavedActive = usage.ActiveSeconds;
         _bonusSeconds = usage.BonusSeconds;
         _expired = usage.Expired;
         _ticksSinceSave = 0;

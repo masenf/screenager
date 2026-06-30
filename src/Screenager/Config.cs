@@ -22,6 +22,8 @@ public sealed class Config
     // ----- [override] -----
     public string OverridePin => Get("override", "pin", "").Trim();
     public string OverrideHotkey => Get("override", "hotkey", "Ctrl+Alt+Shift+S");
+    // How long opening the override dialog suspends locking (capped so it can't be left open to dodge a lock).
+    public int OverrideGraceSeconds => Math.Max(5, GetInt("override", "grace_seconds", 30));
 
     // ----- [startup] -----
     public bool StartupHidden => GetBool("startup", "hidden", true);

@@ -1,3 +1,5 @@
+using Screenager.Native;
+
 namespace Screenager.Ui;
 
 public enum OverrideAction { Cancel, Grant, Revoke }
@@ -91,6 +93,16 @@ public sealed class OverrideDialog : Form
         AcceptButton = grant;
         CancelButton = cancel;
         ActiveControl = _pinBox;
+    }
+
+    protected override void OnShown(EventArgs e)
+    {
+        base.OnShown(e);
+        // The dialog may open while a topmost warning (or game) holds focus; force it forward
+        // and put the cursor in the PIN field so the parent can type immediately.
+        NativeMethods.ForceForeground(Handle);
+        _pinBox.Focus();
+        _pinBox.Select();
     }
 
     private static Label MakeLabel(string text) => new()

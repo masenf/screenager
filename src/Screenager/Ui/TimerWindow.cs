@@ -21,6 +21,10 @@ public sealed class TimerWindow : Form
     private Point _dragStartScreen;
     private Point _dragStartWindow;
 
+    private string? _lastText;
+    private Color _lastBg;
+    private int _topmostThrottle;
+
     /// <summary>Raised when the user finishes dragging the window, with the new location.</summary>
     public event Action<Point>? Moved;
 
@@ -143,8 +147,23 @@ public sealed class TimerWindow : Form
         if (s.Paused && s.RemainingSeconds > 0 && !s.Bedtime)
             text = "⏸ " + text;
 
-        _label.Text = text;
-        BackColor = bg;
-        NativeMethods.KeepTopMost(Handle);
+        // Only touch the UI when something actually changed (no repaint while paused/idle).
+        if (text != _lastText)
+        {
+            _label.Text = text;
+            _lastText = text;
+        }
+        if (bg != _lastBg)
+        {
+            BackColor = bg;
+            _lastBg = bg;
+        }
+
+        // Re-assert topmost occasionally rather than every tick.
+        if (++_topmostThrottle >= 10)
+        {
+            _topmostThrottle = 0;
+            NativeMethods.KeepTopMost(Handle);
+        }
     }
 }

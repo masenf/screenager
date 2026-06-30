@@ -21,13 +21,18 @@ public sealed class WarningWindow : Form
         TopMost = true;
         StartPosition = FormStartPosition.CenterScreen;
         BackColor = Color.FromArgb(140, 20, 20);
-        Size = new Size(640, 220);
+        // Auto-size to the text (plus padding) so the message can never be clipped.
+        AutoSize = true;
+        AutoSizeMode = AutoSizeMode.GrowAndShrink;
+        Padding = new Padding(56, 40, 56, 40);
+        MinimumSize = new Size(560, 240);
 
         _label = new Label
         {
-            Dock = DockStyle.Fill,
+            AutoSize = true,
+            MaximumSize = new Size(760, 0), // wrap very long lines
             ForeColor = Color.White,
-            Font = new Font("Segoe UI", 26f, FontStyle.Bold),
+            Font = new Font("Segoe UI", 22f, FontStyle.Bold),
             TextAlign = ContentAlignment.MiddleCenter,
         };
         Controls.Add(_label);
