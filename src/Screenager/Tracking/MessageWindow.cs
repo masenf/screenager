@@ -18,14 +18,9 @@ public sealed class MessageWindow : Form
 
     public MessageWindow()
     {
-        // Keep it invisible and off the taskbar/alt-tab; never call Show().
+        // A handle-only message sink: never shown, kept off the taskbar/alt-tab.
         FormBorderStyle = FormBorderStyle.FixedToolWindow;
         ShowInTaskbar = false;
-        WindowState = FormWindowState.Minimized;
-        Opacity = 0;
-        Size = new Size(1, 1);
-        StartPosition = FormStartPosition.Manual;
-        Location = new Point(-32000, -32000);
     }
 
     protected override void SetVisibleCore(bool value)

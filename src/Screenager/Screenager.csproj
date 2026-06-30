@@ -7,6 +7,8 @@
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <LangVersion>latest</LangVersion>
+    <!-- The LibraryImport source generator emits unsafe marshalling code (SYSLIB1062). -->
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     <AssemblyName>screenager</AssemblyName>
     <RootNamespace>Screenager</RootNamespace>
     <ApplicationManifest>app.manifest</ApplicationManifest>

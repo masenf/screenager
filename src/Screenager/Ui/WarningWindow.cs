@@ -13,7 +13,6 @@ public sealed class WarningWindow : Form
     private const int WS_EX_TOPMOST = 0x00000008;
 
     private readonly Label _label;
-    private bool _soundPlayed;
 
     public WarningWindow()
     {
@@ -56,7 +55,6 @@ public sealed class WarningWindow : Form
             CenterToScreen();
             NativeMethods.ForceForeground(Handle); // grab focus once, over fullscreen apps
             SystemSounds.Exclamation.Play();
-            _soundPlayed = true;
         }
         else
         {
@@ -68,6 +66,5 @@ public sealed class WarningWindow : Form
     {
         if (Visible)
             Hide();
-        _soundPlayed = false;
     }
 }
