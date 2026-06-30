@@ -4,7 +4,12 @@ on:
   push:
     branches:
       - "**"
+  release:
+    types: [published]
   workflow_dispatch:
+
+permissions:
+  contents: write # needed to attach assets to the release
 
 jobs:
   publish:
@@ -42,3 +47,13 @@ jobs:
             publish/screenager.exe
             publish/screenager.cfg
           if-no-files-found: error
+
+      # On a published release, attach the build as release assets. Names are kept stable so the
+      # "latest" download URL (…/releases/latest/download/screenager.exe) always resolves.
+      - name: Attach to release
+        if: github.event_name == 'release'
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            publish/screenager.exe
+            publish/screenager.cfg
