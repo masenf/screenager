@@ -5,7 +5,8 @@ namespace Screenager.Ui;
 
 /// <summary>
 /// Small always-on-top countdown. Never takes focus (WS_EX_NOACTIVATE) and stays out of the
-/// taskbar/alt-tab (WS_EX_TOOLWINDOW). Re-asserts topmost on every update.
+/// taskbar/alt-tab (WS_EX_TOOLWINDOW). Draggable anywhere (the whole window acts as a title bar);
+/// its position is reported via <see cref="Moved"/> so the controller can persist it.
 /// </summary>
 public sealed class TimerWindow : Form
 {
@@ -13,16 +14,16 @@ public sealed class TimerWindow : Form
     private const int WS_EX_TOPMOST = 0x00000008;
     private const int WS_EX_NOACTIVATE = 0x08000000;
 
-    private readonly Label _label;
+    private const int WM_NCHITTEST = 0x0084;
+    private const int WM_EXITSIZEMOVE = 0x0232;
+    private const int HTCLIENT = 1;
+    private const int HTCAPTION = 2;
+
     private readonly int _warnSeconds;
     private readonly Point? _initialLocation;
+    private readonly Font _font = new("Segoe UI", 16f, FontStyle.Bold);
 
-    private bool _dragging;
-    private Point _dragStartScreen;
-    private Point _dragStartWindow;
-
-    private string? _lastText;
-    private Color _lastBg;
+    private string _text = "--:--";
     private int _topmostThrottle;
 
     /// <summary>Raised when the user finishes dragging the window, with the new location.</summary>
@@ -39,47 +40,8 @@ public sealed class TimerWindow : Form
         StartPosition = FormStartPosition.Manual;
         BackColor = Color.FromArgb(24, 24, 28);
         Size = new Size(120, 48);
-        Cursor = Cursors.SizeAll; // hint that it can be dragged
-
-        _label = new Label
-        {
-            Dock = DockStyle.Fill,
-            ForeColor = Color.White,
-            Font = new Font("Segoe UI", 16f, FontStyle.Bold),
-            TextAlign = ContentAlignment.MiddleCenter,
-            Text = "--:--",
-            Cursor = Cursors.SizeAll,
-        };
-        Controls.Add(_label);
-
-        // Drag anywhere on the window to move it (it never takes focus, so we move it manually).
-        _label.MouseDown += OnDragStart;
-        _label.MouseMove += OnDragMove;
-        _label.MouseUp += OnDragEnd;
-    }
-
-    private void OnDragStart(object? sender, MouseEventArgs e)
-    {
-        if (e.Button != MouseButtons.Left) return;
-        _dragging = true;
-        _dragStartScreen = Cursor.Position;
-        _dragStartWindow = Location;
-    }
-
-    private void OnDragMove(object? sender, MouseEventArgs e)
-    {
-        if (!_dragging) return;
-        var now = Cursor.Position;
-        Location = new Point(
-            _dragStartWindow.X + (now.X - _dragStartScreen.X),
-            _dragStartWindow.Y + (now.Y - _dragStartScreen.Y));
-    }
-
-    private void OnDragEnd(object? sender, MouseEventArgs e)
-    {
-        if (!_dragging) return;
-        _dragging = false;
-        Moved?.Invoke(Location);
+        Cursor = Cursors.SizeAll; // hint that the whole window can be dragged
+        DoubleBuffered = true;     // flicker-free text repaint
     }
 
     protected override bool ShowWithoutActivation => true;
@@ -92,6 +54,25 @@ public sealed class TimerWindow : Form
             cp.ExStyle |= WS_EX_TOOLWINDOW | WS_EX_TOPMOST | WS_EX_NOACTIVATE;
             return cp;
         }
+    }
+
+    protected override void WndProc(ref Message m)
+    {
+        base.WndProc(ref m);
+
+        // Treat clicks anywhere as a title-bar grab so the OS drags the window for us (reliable on
+        // a borderless no-activate window). Persist the new location once the move finishes.
+        if (m.Msg == WM_NCHITTEST && m.Result == (IntPtr)HTCLIENT)
+            m.Result = (IntPtr)HTCAPTION;
+        else if (m.Msg == WM_EXITSIZEMOVE)
+            Moved?.Invoke(Location);
+    }
+
+    protected override void OnPaint(PaintEventArgs e)
+    {
+        base.OnPaint(e);
+        TextRenderer.DrawText(e.Graphics, _text, _font, ClientRectangle, Color.White,
+            TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter | TextFormatFlags.NoPrefix);
     }
 
     protected override void OnShown(EventArgs e)
@@ -147,17 +128,20 @@ public sealed class TimerWindow : Form
         if (s.Paused && s.RemainingSeconds > 0 && !s.Bedtime)
             text = "⏸ " + text;
 
-        // Only touch the UI when something actually changed (no repaint while paused/idle).
-        if (text != _lastText)
+        // Only repaint when something actually changed (nothing happens while paused/idle).
+        bool changed = false;
+        if (text != _text)
         {
-            _label.Text = text;
-            _lastText = text;
+            _text = text;
+            changed = true;
         }
-        if (bg != _lastBg)
+        if (bg != BackColor)
         {
-            BackColor = bg;
-            _lastBg = bg;
+            BackColor = bg; // also invalidates
+            changed = true;
         }
+        if (changed)
+            Invalidate();
 
         // Re-assert topmost occasionally rather than every tick.
         if (++_topmostThrottle >= 10)
@@ -165,5 +149,12 @@ public sealed class TimerWindow : Form
             _topmostThrottle = 0;
             NativeMethods.KeepTopMost(Handle);
         }
+    }
+
+    protected override void Dispose(bool disposing)
+    {
+        if (disposing)
+            _font.Dispose();
+        base.Dispose(disposing);
     }
 }

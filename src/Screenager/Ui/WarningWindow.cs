@@ -33,7 +33,7 @@ public sealed class WarningWindow : Form
             MaximumSize = new Size(760, 0), // wrap very long lines
             ForeColor = Color.White,
             Font = new Font("Segoe UI", 22f, FontStyle.Bold),
-            TextAlign = ContentAlignment.MiddleCenter,
+            TextAlign = ContentAlignment.MiddleLeft,
         };
         Controls.Add(_label);
     }
