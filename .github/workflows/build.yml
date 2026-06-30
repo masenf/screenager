@@ -1,0 +1,44 @@
+name: build
+
+on:
+  push:
+    branches:
+      - "**"
+  workflow_dispatch:
+
+jobs:
+  publish:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "10.0.x"
+
+      - name: Restore
+        run: dotnet restore src/Screenager/Screenager.csproj
+
+      - name: Publish (self-contained single-file win-x64)
+        run: >
+          dotnet publish src/Screenager/Screenager.csproj
+          -c Release -r win-x64 --self-contained true
+          -p:PublishSingleFile=true
+          -p:IncludeNativeLibrariesForSelfExtract=true
+          -o publish
+
+      - name: Stage artifact (exe + sample config)
+        shell: pwsh
+        run: |
+          Copy-Item screenager.cfg publish/screenager.cfg -Force
+          Get-ChildItem publish
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: screenager-win-x64
+          path: |
+            publish/screenager.exe
+            publish/screenager.cfg
+          if-no-files-found: error

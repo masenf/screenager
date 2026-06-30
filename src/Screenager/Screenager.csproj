@@ -1,0 +1,36 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net10.0-windows</TargetFramework>
+    <UseWindowsForms>true</UseWindowsForms>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <LangVersion>latest</LangVersion>
+    <!-- The LibraryImport source generator emits unsafe marshalling code (SYSLIB1062). -->
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <AssemblyName>screenager</AssemblyName>
+    <RootNamespace>Screenager</RootNamespace>
+
+    <!-- No custom app.manifest: the SDK embeds its known-good default. DPI awareness is
+         applied at runtime by ApplicationConfiguration.Initialize() from this property,
+         and asInvoker is already the default execution level. -->
+    <ApplicationHighDpiMode>PerMonitorV2</ApplicationHighDpiMode>
+
+    <!-- Single-file, self-contained publish defaults (CLI can still override) -->
+    <RuntimeIdentifier>win-x64</RuntimeIdentifier>
+    <SelfContained>true</SelfContained>
+    <PublishSingleFile>true</PublishSingleFile>
+    <IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract>
+    <!-- Compress the bundled runtime so the on-disk exe is ~half the size. -->
+    <EnableCompressionInSingleFile>true</EnableCompressionInSingleFile>
+    <!-- WinForms does not trim cleanly; keep trimming off. -->
+    <PublishTrimmed>false</PublishTrimmed>
+    <InvariantGlobalization>true</InvariantGlobalization>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Data.Sqlite" Version="10.0.0" />
+  </ItemGroup>
+
+</Project>
