@@ -21,8 +21,8 @@ public sealed class WarningWindow : Form
         TopMost = true;
         StartPosition = FormStartPosition.CenterScreen;
         BackColor = Color.FromArgb(140, 20, 20);
-        // Auto-size to the text so the box hugs the content with uniform margins on every side
-        // (no MinimumSize — that would force the box wider than the text and pile slack on one side).
+        // Hug the text with uniform padding (no fixed size) so the message can't be clipped or
+        // sit lopsided in an over-wide box.
         AutoSize = true;
         AutoSizeMode = AutoSizeMode.GrowAndShrink;
         Padding = new Padding(48);

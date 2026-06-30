@@ -19,8 +19,8 @@ Built for a single family PC: C# / .NET 10, published as a **self-contained sing
 - **The logical day** rolls over at `reset_hour` (e.g. 4am) so late-night use counts against the
   right day. State is stored in SQLite at `%LOCALAPPDATA%\screenager\screenager.db`.
 - **Enforcement.** When the budget is exhausted (or during the bedtime window) it shows a large
-  topmost warning, then calls `LockWorkStation()`. If your son unlocks again while his time is
-  spent, it briefly shows "screen time is up" and re-locks.
+  topmost warning, then calls `LockWorkStation()`. If the monitored user unlocks again while
+  their time is spent, it briefly shows "screen time is up" and re-locks.
 - **Parent override.** Press the hotkey (default `Ctrl+Alt+Shift+S`), enter your PIN, and grant
   extra minutes for today (or revoke previously-granted time). While any granted time is still
   active, the **bedtime cutoff is suspended** too. The dialog shows how much extra has been
@@ -60,7 +60,7 @@ dotnet publish src/Screenager/Screenager.csproj -c Release -r win-x64 --self-con
      account; the API key is used as the HTTP Basic-auth password.)
 2. **Make Windows trust it** (see next section).
 3. Test it: lower `daily_minutes` to `1`, run `screenager.exe`, and watch it count down and lock.
-4. Install it to start hidden at logon (run **as the son's user**, approving the UAC prompt):
+4. Install it to start hidden at logon (run **as the monitored user's account**, approving the UAC prompt):
    ```
    screenager.exe --install
    ```
@@ -108,9 +108,10 @@ A real CA-issued certificate is only needed if you distribute the exe beyond thi
 - **Exclusive-fullscreen games** (legacy DirectX) may not let the visual warning draw on top — the
   **lock still fires**, and an audible alert plays. Most modern borderless-fullscreen games are fine.
 - **Tamper resistance is modest.** This is a user-mode app; a determined admin user can kill it,
-  delete the task, or change the clock. Keep your son on a **Standard (non-admin)** account so he
-  can't read the config (which contains the Mailgun key) or remove the task. Backward clock changes
-  are ignored and per-tick credit is capped, but this deters casual evasion, not a determined user.
+  delete the task, or change the clock. Keep the monitored user on a **Standard (non-admin)**
+  account so they can't read the config (which contains the Mailgun key) or remove the task.
+  Backward clock changes are ignored and per-tick credit is capped, but this deters casual evasion,
+  not a determined user.
 - **Gamepad-only play** can read as idle (no keyboard/mouse), pausing the countdown.
 - **Privacy.** This is monitoring software. The config stores the Mailgun API key in plaintext —
   restrict the file's permissions and keep it off a shared account.
@@ -121,7 +122,7 @@ A real CA-issued certificate is only needed if you distribute the exe beyond thi
 
 ```
 src/Screenager/
-  Program.cs            entry point + CLI verbs (run / --install / --uninstall / --report-now)
+  Program.cs            entry point + CLI verbs (run / --install / --uninstall / --test-email / --report-now)
   AppController.cs      wires tracker + UI + enforcement + session/power events
   Config.cs             INI-style config parser
   Native/               P/Invoke surface

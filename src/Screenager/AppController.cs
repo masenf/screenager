@@ -118,7 +118,7 @@ public sealed class AppController : IDisposable
         if (_locked)
             return;
 
-        // Dialog open but grace elapsed: don't fight over the warning; just enforce if expired.
+        // Dialog open but grace elapsed: enforce if expired rather than waiting indefinitely.
         if (_override.DialogOpen)
         {
             if (s.Expired)
