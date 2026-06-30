@@ -35,7 +35,6 @@ public sealed class OverrideDialog : Form
             Dock = DockStyle.Fill,
             ColumnCount = 2,
             RowCount = 4,
-            AutoSize = true,
         };
         layout.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 110));
         layout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
@@ -59,12 +58,12 @@ public sealed class OverrideDialog : Form
         layout.SetColumnSpan(granted, 2);
 
         layout.Controls.Add(MakeLabel("Parent PIN:"), 0, 1);
-        _pinBox = new TextBox { Dock = DockStyle.Fill, UseSystemPasswordChar = true, Anchor = AnchorStyles.Left | AnchorStyles.Right };
-        layout.Controls.Add(Wrap(_pinBox), 1, 1);
+        _pinBox = new TextBox { Dock = DockStyle.Fill, UseSystemPasswordChar = true, Margin = new Padding(0, 8, 0, 8) };
+        layout.Controls.Add(_pinBox, 1, 1);
 
         layout.Controls.Add(MakeLabel("Add minutes:"), 0, 2);
-        _minutes = new NumericUpDown { Dock = DockStyle.Fill, Minimum = 1, Maximum = 1440, Value = 30, Anchor = AnchorStyles.Left | AnchorStyles.Right };
-        layout.Controls.Add(Wrap(_minutes), 1, 2);
+        _minutes = new NumericUpDown { Dock = DockStyle.Fill, Minimum = 1, Maximum = 1440, Value = 30, Margin = new Padding(0, 8, 0, 8) };
+        layout.Controls.Add(_minutes, 1, 2);
 
         var buttons = new FlowLayoutPanel
         {
@@ -101,9 +100,6 @@ public sealed class OverrideDialog : Form
         TextAlign = ContentAlignment.MiddleLeft,
         AutoSize = false,
     };
-
-    // Vertically center a single-line control inside its 40px cell.
-    private static Panel Wrap(Control c) => new() { Dock = DockStyle.Fill, Padding = new Padding(0, 8, 0, 8), Controls = { c } };
 
     private void Submit(OverrideAction action)
     {
