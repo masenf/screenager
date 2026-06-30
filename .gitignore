@@ -1,0 +1,13 @@
+# Build output
+bin/
+obj/
+publish/
+*.user
+
+# Local secrets — never commit a real config with the API key/PIN
+screenager.local.cfg
+
+# IDE
+.vs/
+.idea/
+*.suo
