@@ -16,6 +16,11 @@ Built for a single family PC: C# / .NET 10, published as a **self-contained sing
   *only* while the session is unlocked, the machine is awake, and there has been keyboard/mouse
   input within `idle_threshold_seconds`. Locking, sleeping, or going idle pauses the countdown.
   Per-tick credit is capped, so missed sleep/lock events or clock changes can't over-count.
+  With `audio_counts_as_activity` (default on), active audio output (e.g. a video playing) also
+  counts as activity, so watching a video without touching the keyboard/mouse doesn't idle-pause.
+  A *muted* video isn't detected.
+- **Count up or down.** By default the countdown shows time remaining; set `[display] count_up = true`
+  to show elapsed used time instead (like a match clock).
 - **The logical day** rolls over at `reset_hour` (e.g. 4am) so late-night use counts against the
   right day. State is stored in SQLite at `%LOCALAPPDATA%\screenager\screenager.db`.
 - **Enforcement.** When the budget is exhausted (or during the bedtime window) it shows a large

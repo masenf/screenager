@@ -16,6 +16,8 @@ public sealed class Config
     public int ResetHour => Math.Clamp(GetInt("limits", "reset_hour", 4), 0, 23);
     public int IdleThresholdSeconds => Math.Max(5, GetInt("limits", "idle_threshold_seconds", 60));
     public int WarnSeconds => Math.Max(5, GetInt("limits", "warn_seconds", 30));
+    // Treat active audio output (e.g. a video playing) as activity, so it doesn't idle-pause.
+    public bool AudioCountsAsActivity => GetBool("limits", "audio_counts_as_activity", true);
     public TimeSpan? BedtimeStart => GetTime("limits", "bedtime_start");
     public TimeSpan? BedtimeEnd => GetTime("limits", "bedtime_end");
 
@@ -24,6 +26,10 @@ public sealed class Config
     public string OverrideHotkey => Get("override", "hotkey", "Ctrl+Alt+Shift+S");
     // How long opening the override dialog suspends locking (capped so it can't be left open to dodge a lock).
     public int OverrideGraceSeconds => Math.Max(5, GetInt("override", "grace_seconds", 30));
+
+    // ----- [display] -----
+    // Count up (elapsed used time) instead of down (remaining time).
+    public bool CountUp => GetBool("display", "count_up", false);
 
     // ----- [startup] -----
     public bool StartupHidden => GetBool("startup", "hidden", true);

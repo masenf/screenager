@@ -43,7 +43,7 @@ public sealed class AppController : IDisposable
 
         _tracker = new ActivityTracker(_db, cfg, _clock);
         _focus = new FocusTracker(_db, _clock) { ShouldCount = () => _last is { Paused: false } };
-        _timerWindow = new TimerWindow(cfg.WarnSeconds, LoadTimerLocation());
+        _timerWindow = new TimerWindow(cfg.WarnSeconds, cfg.CountUp, LoadTimerLocation());
         _timerWindow.Moved += SaveTimerLocation;
         _warning = new WarningWindow();
         _timeUp = new TimeUpWindow();

@@ -20,6 +20,7 @@ public sealed class TimerWindow : Form
     private const int HTCAPTION = 2;
 
     private readonly int _warnSeconds;
+    private readonly bool _countUp;
     private readonly Point? _initialLocation;
     private readonly Font _font = new("Segoe UI", 16f, FontStyle.Bold);
 
@@ -29,9 +30,10 @@ public sealed class TimerWindow : Form
     /// <summary>Raised when the user finishes dragging the window, with the new location.</summary>
     public event Action<Point>? Moved;
 
-    public TimerWindow(int warnSeconds, Point? initialLocation)
+    public TimerWindow(int warnSeconds, bool countUp, Point? initialLocation)
     {
         _warnSeconds = warnSeconds;
+        _countUp = countUp;
         _initialLocation = initialLocation;
 
         FormBorderStyle = FormBorderStyle.None;
@@ -116,10 +118,12 @@ public sealed class TimerWindow : Form
         }
         else
         {
-            var ts = TimeSpan.FromSeconds(s.RemainingSeconds);
+            // Count up shows elapsed used time; count down shows time remaining.
+            var ts = TimeSpan.FromSeconds(_countUp ? s.ActiveSeconds : s.RemainingSeconds);
             text = ts.TotalHours >= 1
                 ? $"{(int)ts.TotalHours}:{ts.Minutes:00}:{ts.Seconds:00}"
                 : $"{ts.Minutes:00}:{ts.Seconds:00}";
+            // Colour still reflects urgency (time remaining), regardless of display direction.
             bg = s.RemainingSeconds <= _warnSeconds ? Color.FromArgb(150, 30, 30)
                : s.Paused ? Color.FromArgb(40, 40, 48)
                : Color.FromArgb(24, 24, 28);
