@@ -23,12 +23,15 @@ public sealed class ActivityTracker : IDisposable
     private const int TickMs = 1000;
     private const double MaxCreditPerTickSeconds = 2.0; // self-heals missed sleep/lock + clock jumps
     private const int SaveEveryTicks = 10;
+    private const float AudioPeakThreshold = 0.001f; // above this, sound is actually playing
+    private const int AudioGraceTicks = 8; // keep counting for ~8s after audio last heard
 
     private readonly Database _db;
     private readonly Config _cfg;
     private readonly LogicalClock _clock;
     private readonly System.Windows.Forms.Timer _timer;
     private readonly Stopwatch _stopwatch = new();
+    private readonly AudioActivity? _audio;
 
     private string _day;
     private double _activeSeconds;
@@ -36,6 +39,7 @@ public sealed class ActivityTracker : IDisposable
     private bool _expired;
     private int _ticksSinceSave;
     private int _lastSavedActive;
+    private int _audioActiveTicks;
 
     // Wall-clock instant until which an active parent override suppresses bedtime locking.
     private const string OverrideUntilKey = "override_until";
@@ -59,6 +63,7 @@ public sealed class ActivityTracker : IDisposable
         _bonusSeconds = usage.BonusSeconds;
         _expired = usage.Expired;
         _overrideUntil = LoadOverrideUntil();
+        _audio = cfg.AudioCountsAsActivity ? new AudioActivity() : null;
 
         _timer = new System.Windows.Forms.Timer { Interval = TickMs };
         _timer.Tick += (_, _) => OnTick();
@@ -122,15 +127,25 @@ public sealed class ActivityTracker : IDisposable
         OnTick();
     }
 
-    public TrackerSnapshot Snapshot()
+    /// <summary>
+    /// Paused when locked, asleep, or idle. Idle is overridden by active audio output (a playing
+    /// video keeps counting) when that option is enabled. Audio is held "active" for a few seconds
+    /// after the last detected peak so brief silences (e.g. gaps between speech) don't flap.
+    /// </summary>
+    private bool IsPaused()
     {
-        var now = DateTime.Now;
-        bool bedtime = IsBedtimeNow(now);
-        bool paused = Locked || Suspended || NativeMethods.GetIdleSeconds() >= _cfg.IdleThresholdSeconds;
-        int active = (int)Math.Round(_activeSeconds);
-        int remaining = Math.Max(0, BudgetSeconds - active);
-        bool expired = _expired || bedtime || remaining <= 0;
-        return new TrackerSnapshot(_day, remaining, BudgetSeconds, active, paused, bedtime, expired);
+        if (Locked || Suspended)
+            return true;
+
+        if (_audio?.IsPlaying(AudioPeakThreshold) ?? false)
+            _audioActiveTicks = AudioGraceTicks;
+        else if (_audioActiveTicks > 0)
+            _audioActiveTicks--;
+
+        bool idle = NativeMethods.GetIdleSeconds() >= _cfg.IdleThresholdSeconds;
+        if (!idle)
+            return false; // real input — active regardless of audio
+        return _audioActiveTicks <= 0; // idle: active only while audio is (recently) playing
     }
 
     private void OnTick()
@@ -145,7 +160,7 @@ public sealed class ActivityTracker : IDisposable
             RollToDay(today);
 
         bool bedtime = IsBedtimeNow(now);
-        bool paused = Locked || Suspended || NativeMethods.GetIdleSeconds() >= _cfg.IdleThresholdSeconds;
+        bool paused = IsPaused();
 
         if (!paused && !bedtime)
             _activeSeconds += delta;
@@ -195,6 +210,7 @@ public sealed class ActivityTracker : IDisposable
     {
         _timer.Stop();
         _timer.Dispose();
+        _audio?.Dispose();
         Flush();
     }
 }
