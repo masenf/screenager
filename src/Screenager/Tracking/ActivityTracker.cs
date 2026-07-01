@@ -24,7 +24,8 @@ public sealed class ActivityTracker : IDisposable
     private const double MaxCreditPerTickSeconds = 2.0; // self-heals missed sleep/lock + clock jumps
     private const int SaveEveryTicks = 10;
     private const float AudioPeakThreshold = 0.001f; // above this, sound is actually playing
-    private const int AudioGraceTicks = 8; // keep counting for ~8s after audio last heard
+    private const int AudioPollTicks = 5;   // sample the audio meter every ~5s to save CPU
+    private const int AudioGraceTicks = 15; // treat audio as active this long after last heard
 
     private readonly Database _db;
     private readonly Config _cfg;
@@ -40,6 +41,7 @@ public sealed class ActivityTracker : IDisposable
     private int _ticksSinceSave;
     private int _lastSavedActive;
     private int _audioActiveTicks;
+    private int _sinceAudioPoll;
 
     // Wall-clock instant until which an active parent override suppresses bedtime locking.
     private const string OverrideUntilKey = "override_until";
@@ -129,18 +131,26 @@ public sealed class ActivityTracker : IDisposable
 
     /// <summary>
     /// Paused when locked, asleep, or idle. Idle is overridden by active audio output (a playing
-    /// video keeps counting) when that option is enabled. Audio is held "active" for a few seconds
-    /// after the last detected peak so brief silences (e.g. gaps between speech) don't flap.
+    /// video keeps counting) when that option is enabled. The meter is sampled only every
+    /// <see cref="AudioPollTicks"/> to save CPU; the longer grace window bridges those gaps and
+    /// smooths over brief silences (e.g. between spoken words).
     /// </summary>
     private bool IsPaused()
     {
         if (Locked || Suspended)
             return true;
 
-        if (_audio?.IsPlaying(AudioPeakThreshold) ?? false)
-            _audioActiveTicks = AudioGraceTicks;
-        else if (_audioActiveTicks > 0)
-            _audioActiveTicks--;
+        if (_audio is not null)
+        {
+            if (--_sinceAudioPoll <= 0)
+            {
+                _sinceAudioPoll = AudioPollTicks;
+                if (_audio.IsPlaying(AudioPeakThreshold))
+                    _audioActiveTicks = AudioGraceTicks;
+            }
+            if (_audioActiveTicks > 0)
+                _audioActiveTicks--;
+        }
 
         bool idle = NativeMethods.GetIdleSeconds() >= _cfg.IdleThresholdSeconds;
         if (!idle)
