@@ -92,7 +92,7 @@ public static class StartupManager
     /// stop Screenager: no 3-day execution time limit (PT0S), keeps running on battery, normal
     /// priority (the default 7 is below-normal and would be inherited by the timer app).
     /// </summary>
-    private static string BuildTaskXml(string exe, string dir)
+    internal static string BuildTaskXml(string exe, string dir)
     {
         string user = WindowsIdentity.GetCurrent().User!.Value; // SID of the installing (monitored) user
         static string X(string s) => SecurityElement.Escape(s)!;

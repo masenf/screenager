@@ -17,9 +17,7 @@
          and asInvoker is already the default execution level. -->
     <ApplicationHighDpiMode>PerMonitorV2</ApplicationHighDpiMode>
 
-    <!-- Single-file, self-contained publish defaults (CLI can still override) -->
-    <RuntimeIdentifier>win-x64</RuntimeIdentifier>
-    <SelfContained>true</SelfContained>
+    <!-- Single-file, self-contained publish defaults (CLI can still override). -->
     <PublishSingleFile>true</PublishSingleFile>
     <IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract>
     <!-- Compress the bundled runtime so the on-disk exe is ~half the size. -->
@@ -29,8 +27,19 @@
     <InvariantGlobalization>true</InvariantGlobalization>
   </PropertyGroup>
 
+  <!-- Only `dotnet publish` targets win-x64 self-contained; a plain build stays portable so the
+       test project can reference this assembly like a normal library. -->
+  <PropertyGroup Condition="'$(_IsPublishing)' == 'true'">
+    <RuntimeIdentifier Condition="'$(RuntimeIdentifier)' == ''">win-x64</RuntimeIdentifier>
+    <SelfContained Condition="'$(SelfContained)' == ''">true</SelfContained>
+  </PropertyGroup>
+
   <ItemGroup>
     <PackageReference Include="Microsoft.Data.Sqlite" Version="10.0.0" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="Screenager.Tests" />
   </ItemGroup>
 
 </Project>

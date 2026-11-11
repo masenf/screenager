@@ -32,8 +32,10 @@ Built for a single family PC: C# / .NET 10, published as a **self-contained sing
   granted today, and locking is paused for a configurable grace period (`grace_seconds`,
   default 30s) while the dialog is open so you're never rushed.
 - **Movable countdown.** Drag the countdown window anywhere; its position is remembered.
-- **Daily report.** At `send_hour` it emails (via the Mailgun HTTP API) a summary: time used,
-  most-used windows, videos watched, and sites visited (read from Chrome/Edge/Firefox history).
+- **Daily report.** At `send_hour` it emails (via the Mailgun HTTP API) a phone-friendly summary:
+  time used against the limit, a timeline of when during the allowed hours the PC was in use,
+  time per app (with the busiest windows of each), and linked lists of videos watched and sites
+  visited (read from Chrome/Edge/Firefox history).
   A **Stability** section lists every crash, hang, or restart since the last successful report,
   with the details needed to fix it.
 - **Watchdog.** `screenager.exe` runs a small supervisor that launches the timer app as a child
@@ -65,6 +67,15 @@ To build locally instead (needs the .NET 10 SDK):
 ```powershell
 dotnet publish src/Screenager/Screenager.csproj -c Release -r win-x64 --self-contained true `
   -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -o publish
+```
+
+**Tests** (xUnit, `tests/Screenager.Tests`) cover the promises in this README: active-time
+accounting (idle/lock pauses, per-tick cap, limit, bedtime, overrides, resume after restart),
+day rollover, config parsing, persistence, the report's contents and link safety, and the
+scheduled-task settings the watchdog relies on. CI runs them before publishing:
+
+```powershell
+dotnet test tests/Screenager.Tests/Screenager.Tests.csproj
 ```
 
 ---
@@ -154,6 +165,7 @@ src/Screenager/
   Ui/                   countdown, warning, time-up, override dialog
   Data/                 SQLite persistence
   Reporting/            browser history, report builder, Mailgun mailer, scheduler
-.github/workflows/build.yml   CI that publishes the standalone exe
+tests/Screenager.Tests/       xUnit tests (run by CI before publishing)
+.github/workflows/build.yml   CI that tests, then publishes the standalone exe
 screenager.cfg          sample configuration
 ```
