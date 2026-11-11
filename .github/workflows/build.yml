@@ -25,6 +25,23 @@ jobs:
       - name: Restore
         run: dotnet restore src/Screenager/Screenager.csproj
 
+      # Runs before publishing so a regression never produces a downloadable build.
+      - name: Test
+        run: >
+          dotnet test tests/Screenager.Tests/Screenager.Tests.csproj
+          -c Release
+          --logger "trx;LogFileName=test-results.trx"
+          --logger "console;verbosity=normal"
+          --results-directory test-results
+
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-results
+          path: test-results/*.trx
+          if-no-files-found: ignore
+
       - name: Publish (self-contained single-file win-x64)
         run: >
           dotnet publish src/Screenager/Screenager.csproj
