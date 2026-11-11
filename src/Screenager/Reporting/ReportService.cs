@@ -36,8 +36,17 @@ public sealed class ReportService
             }
         }
 
-        var (subject, html, text) = ReportBuilder.Build(_db, _cfg, day, Environment.MachineName);
-        return await Mailer.SendAsync(_cfg, subject, html, text).ConfigureAwait(false);
+        // Every crash/hang/restart not yet emailed — not just today's — so nothing is lost when a
+        // send fails or the app was down at send time. Marked reported only after a successful send.
+        var crashes = _db.GetUnreportedCrashes();
+        int totalUnreported = _db.CountUnreportedCrashes();
+
+        var (subject, html, text) = ReportBuilder.Build(_db, _cfg, day, Environment.MachineName, crashes, totalUnreported);
+        // No ConfigureAwait(false): the DB connection is single-threaded, so resume on the caller's (UI) thread.
+        var result = await Mailer.SendAsync(_cfg, subject, html, text);
+        if (result.ok && crashes.Count > 0)
+            _db.MarkCrashesReported(crashes.Max(c => c.Id));
+        return result;
     }
 
     public Task<(bool ok, string message)> SendTodayAsync()

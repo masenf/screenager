@@ -9,6 +9,26 @@ public sealed record FocusRow(string Process, string Title, int Seconds);
 public sealed record BrowserVisit(string Browser, string Url, string Title, int VisitCount, DateTime LastVisit);
 
 /// <summary>
+/// One stability incident: a crash, an unexpected exit, a hang, or a period where nothing was
+/// running. Written by the worker (managed exception detail) and/or the supervisor (exit code,
+/// console output, event log, resource usage), and emailed in the next daily report.
+/// </summary>
+public sealed record CrashRecord
+{
+    public long Id { get; init; }
+    public DateTime Time { get; init; }
+    /// <summary>exception | exit | hang | supervisor-exception | not-running</summary>
+    public string Kind { get; init; } = "";
+    public int? Pid { get; init; }
+    public string? AppVersion { get; init; }
+    public long? UptimeSeconds { get; init; }
+    public int? ExitCode { get; init; }
+    public string Summary { get; init; } = "";
+    public string Details { get; init; } = "";
+    public string? DumpPath { get; init; }
+}
+
+/// <summary>
 /// SQLite persistence. The connection is kept open for the app's lifetime (WAL mode).
 /// All accounting is keyed by the "logical day" string (see <see cref="Tracking.LogicalClock"/>).
 /// </summary>
@@ -61,6 +81,20 @@ public sealed class Database : IDisposable
                 key TEXT PRIMARY KEY,
                 value TEXT NOT NULL
             );
+            CREATE TABLE IF NOT EXISTS crashes(
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                ts TEXT NOT NULL,
+                kind TEXT NOT NULL,
+                pid INTEGER,
+                app_version TEXT,
+                uptime_seconds INTEGER,
+                exit_code INTEGER,
+                summary TEXT NOT NULL,
+                details TEXT NOT NULL DEFAULT '',
+                dump_path TEXT,
+                reported INTEGER NOT NULL DEFAULT 0
+            );
+            CREATE INDEX IF NOT EXISTS crashes_unreported ON crashes(reported, id);
         """);
     }
 
@@ -227,6 +261,108 @@ public sealed class Database : IDisposable
         """;
         cmd.Parameters.AddWithValue("$k", key);
         cmd.Parameters.AddWithValue("$v", value);
+        cmd.ExecuteNonQuery();
+    }
+
+    public void DeleteMeta(string key)
+    {
+        using var cmd = _conn.CreateCommand();
+        cmd.CommandText = "DELETE FROM meta WHERE key=$k;";
+        cmd.Parameters.AddWithValue("$k", key);
+        cmd.ExecuteNonQuery();
+    }
+
+    // ---------------- crashes ----------------
+    public long InsertCrash(CrashRecord c)
+    {
+        using var cmd = _conn.CreateCommand();
+        cmd.CommandText = """
+            INSERT INTO crashes(ts, kind, pid, app_version, uptime_seconds, exit_code, summary, details, dump_path)
+            VALUES($ts, $k, $pid, $v, $up, $ec, $s, $d, $dp)
+            RETURNING id;
+        """;
+        cmd.Parameters.AddWithValue("$ts", c.Time.ToString("o"));
+        cmd.Parameters.AddWithValue("$k", c.Kind);
+        cmd.Parameters.AddWithValue("$pid", (object?)c.Pid ?? DBNull.Value);
+        cmd.Parameters.AddWithValue("$v", (object?)c.AppVersion ?? DBNull.Value);
+        cmd.Parameters.AddWithValue("$up", (object?)c.UptimeSeconds ?? DBNull.Value);
+        cmd.Parameters.AddWithValue("$ec", (object?)c.ExitCode ?? DBNull.Value);
+        cmd.Parameters.AddWithValue("$s", c.Summary);
+        cmd.Parameters.AddWithValue("$d", c.Details);
+        cmd.Parameters.AddWithValue("$dp", (object?)c.DumpPath ?? DBNull.Value);
+        return (long)cmd.ExecuteScalar()!;
+    }
+
+    /// <summary>
+    /// Attach exit information to the exception record the worker wrote just before it died
+    /// (same pid, written after <paramref name="sinceLocal"/>, no exit code yet). Returns false
+    /// if there is no such record, in which case the caller inserts a fresh one.
+    /// </summary>
+    public bool CompleteExceptionCrash(int pid, DateTime sinceLocal, int exitCode, string extraDetails, string? dumpPath)
+    {
+        using var cmd = _conn.CreateCommand();
+        cmd.CommandText = """
+            UPDATE crashes SET
+                exit_code = $ec,
+                details = details || $extra,
+                dump_path = COALESCE($dp, dump_path)
+            WHERE id = (
+                SELECT id FROM crashes
+                WHERE pid=$pid AND kind='exception' AND exit_code IS NULL AND ts >= $since
+                ORDER BY id DESC LIMIT 1
+            );
+        """;
+        cmd.Parameters.AddWithValue("$ec", exitCode);
+        cmd.Parameters.AddWithValue("$extra", "\n\n" + extraDetails);
+        cmd.Parameters.AddWithValue("$dp", (object?)dumpPath ?? DBNull.Value);
+        cmd.Parameters.AddWithValue("$pid", pid);
+        cmd.Parameters.AddWithValue("$since", sinceLocal.ToString("o"));
+        return cmd.ExecuteNonQuery() > 0;
+    }
+
+    public List<CrashRecord> GetUnreportedCrashes(int limit = 200)
+    {
+        var rows = new List<CrashRecord>();
+        using var cmd = _conn.CreateCommand();
+        cmd.CommandText = """
+            SELECT id, ts, kind, pid, app_version, uptime_seconds, exit_code, summary, details, dump_path
+            FROM crashes WHERE reported=0 ORDER BY id LIMIT $l;
+        """;
+        cmd.Parameters.AddWithValue("$l", limit);
+        using var r = cmd.ExecuteReader();
+        while (r.Read())
+        {
+            DateTime.TryParse(r.GetString(1), null, System.Globalization.DateTimeStyles.RoundtripKind, out var ts);
+            rows.Add(new CrashRecord
+            {
+                Id = r.GetInt64(0),
+                Time = ts,
+                Kind = r.GetString(2),
+                Pid = r.IsDBNull(3) ? null : r.GetInt32(3),
+                AppVersion = r.IsDBNull(4) ? null : r.GetString(4),
+                UptimeSeconds = r.IsDBNull(5) ? null : r.GetInt64(5),
+                ExitCode = r.IsDBNull(6) ? null : r.GetInt32(6),
+                Summary = r.GetString(7),
+                Details = r.GetString(8),
+                DumpPath = r.IsDBNull(9) ? null : r.GetString(9),
+            });
+        }
+        return rows;
+    }
+
+    public int CountUnreportedCrashes()
+    {
+        using var cmd = _conn.CreateCommand();
+        cmd.CommandText = "SELECT COUNT(*) FROM crashes WHERE reported=0;";
+        return Convert.ToInt32(cmd.ExecuteScalar());
+    }
+
+    /// <summary>Mark every unreported crash up to and including <paramref name="maxId"/> as emailed.</summary>
+    public void MarkCrashesReported(long maxId)
+    {
+        using var cmd = _conn.CreateCommand();
+        cmd.CommandText = "UPDATE crashes SET reported=1 WHERE reported=0 AND id <= $id;";
+        cmd.Parameters.AddWithValue("$id", maxId);
         cmd.ExecuteNonQuery();
     }
 

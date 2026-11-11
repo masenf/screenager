@@ -1,11 +1,12 @@
 using Screenager;
+using Screenager.Monitoring;
 using Screenager.Reporting;
 using Screenager.Startup;
 using Screenager.Tracking;
 
 internal static class Program
 {
-    private const string MutexName = "Screenager.SingleInstance.v1";
+    private static string DbPath => Path.Combine(Diagnostics.DataDir, "screenager.db");
 
     [STAThread]
     private static int Main(string[] args)
@@ -19,14 +20,15 @@ internal static class Program
         {
             case "install":
                 if (StartupManager.EnsureElevated(args)) return 0;
-                StartupManager.Install();
-                Info("Screenager installed: it will start hidden at logon, and a Defender exclusion was added.");
-                return 0;
+                var installError = StartupManager.Install();
+                Info(installError ?? "Screenager installed and started. It starts hidden at logon, is re-checked every "
+                    + "10 minutes, restarts itself after a crash or hang, and a Defender exclusion was added.");
+                return installError == null ? 0 : 2;
 
             case "uninstall":
                 if (StartupManager.EnsureElevated(args)) return 0;
                 StartupManager.Uninstall();
-                Info("Screenager uninstalled (logon task + Defender exclusion removed).");
+                Info("Screenager uninstalled (scheduled task, Defender exclusion, and crash-dump setting removed).");
                 return 0;
 
             case "report-now":
@@ -36,28 +38,61 @@ internal static class Program
                 return TestEmail(configPath);
 
             case "run":
-                return Run(configPath);
+                return RunSupervisor();
+
+            case "worker":
+                return RunWorker(configPath);
 
             default:
-                Info($"Unknown option '{args[0]}'.\n\nUsage:\n  screenager            run the limiter\n  screenager --install      register hidden logon task (elevated)\n  screenager --uninstall    remove it (elevated)\n  screenager --test-email   send a quick test email to verify SMTP/Mailgun config\n  screenager --report-now   build and send the full daily report now");
+                Info($"Unknown option '{args[0]}'.\n\nUsage:\n  screenager            run the limiter (watchdog + timer)\n  screenager --install      register hidden logon task (elevated)\n  screenager --uninstall    remove it (elevated)\n  screenager --test-email   send a quick test email to verify SMTP/Mailgun config\n  screenager --report-now   build and send the full daily report now");
                 return 1;
         }
     }
 
-    private static int Run(string configPath)
+    /// <summary>
+    /// Default entry point (logon task, 10-minute re-check, manual launch): the watchdog, which
+    /// runs the timer app as a child process and restarts it on crash or hang. Exits immediately
+    /// if a watchdog is already running, which is what makes the periodic re-check cheap.
+    /// </summary>
+    private static int RunSupervisor()
     {
-        using var mutex = new Mutex(initiallyOwned: true, MutexName, out bool createdNew);
+        using var mutex = new Mutex(initiallyOwned: true, Supervisor.SupervisorMutexName, out bool createdNew);
         if (!createdNew)
             return 0; // already running
 
+        CrashReporter.Install(DbPath, "supervisor");
+        using var supervisor = new Supervisor(DbPath);
+        Application.Run(supervisor);
+        return 0;
+    }
+
+    /// <summary>The timer app itself (normally launched by the watchdog).</summary>
+    private static int RunWorker(string configPath)
+    {
+        using var mutex = new Mutex(initiallyOwned: true, Supervisor.WorkerMutexName, out bool createdNew);
+        if (!createdNew)
+            return Supervisor.ExitAlreadyRunning;
+
+        CrashReporter.Install(DbPath, "worker");
+        // Let UI-thread exceptions crash the process (recorded above, then restarted by the
+        // watchdog) instead of showing WinForms' "Continue/Quit" dialog to the child, which would
+        // leave the app in an unknown state with nobody noticing.
+        Application.SetUnhandledExceptionMode(UnhandledExceptionMode.ThrowException);
         ApplicationConfiguration.Initialize();
 
         var cfg = Config.Load(configPath);
-        var dbPath = Path.Combine(
-            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-            "screenager", "screenager.db");
 
-        using var context = new ScreenagerContext(cfg, dbPath);
+        // Lets a restarted watchdog find and adopt this process if the old watchdog was killed.
+        try
+        {
+            using var db = new Screenager.Data.Database(DbPath);
+            using var self = System.Diagnostics.Process.GetCurrentProcess();
+            db.SetMeta(Supervisor.WorkerPidKey,
+                $"{Environment.ProcessId}|{self.StartTime.ToUniversalTime().Ticks.ToString(System.Globalization.CultureInfo.InvariantCulture)}");
+        }
+        catch { /* adoption is best effort */ }
+
+        using var context = new ScreenagerContext(cfg, DbPath);
         Application.Run(context);
         return 0;
     }
@@ -71,11 +106,7 @@ internal static class Program
             return 1;
         }
 
-        var dbPath = Path.Combine(
-            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-            "screenager", "screenager.db");
-
-        using var db = new Screenager.Data.Database(dbPath);
+        using var db = new Screenager.Data.Database(DbPath);
         var clock = new LogicalClock(cfg.ResetHour, cfg.BedtimeStart, cfg.BedtimeEnd);
         var service = new ReportService(db, cfg, clock);
 

@@ -34,6 +34,20 @@ Built for a single family PC: C# / .NET 10, published as a **self-contained sing
 - **Movable countdown.** Drag the countdown window anywhere; its position is remembered.
 - **Daily report.** At `send_hour` it emails (via the Mailgun HTTP API) a summary: time used,
   most-used windows, videos watched, and sites visited (read from Chrome/Edge/Firefox history).
+  A **Stability** section lists every crash, hang, or restart since the last successful report,
+  with the details needed to fix it.
+- **Watchdog.** `screenager.exe` runs a small supervisor that launches the timer app as a child
+  (`screenager.exe --worker`) and restarts it within seconds if it exits outside logoff/shutdown
+  (backing off to once a minute in a crash loop). If the timer's windows stop answering messages
+  for ~2 minutes it writes a minidump, kills it, and restarts it. Each incident is stored in the
+  `crashes` table with: the managed exception and stack (recorded by the dying process itself),
+  the decoded exit code, the last ~300 lines of console output, matching Windows Application-log
+  entries, GDI/USER/handle/memory usage, per-thread state for hangs, and dump paths. Dumps go to
+  `%LOCALAPPDATA%\screenager\dumps` (hang dumps by the watchdog; crash dumps by Windows Error
+  Reporting, enabled by `--install`); open them with `dotnet-dump analyze` or WinDbg + SOS.
+- **Periodic re-check.** The scheduled task also re-runs every 10 minutes; if Screenager is already
+  running that run exits immediately, otherwise it starts it again and records how long nothing
+  was supervising.
 
 ---
 
@@ -69,8 +83,11 @@ dotnet publish src/Screenager/Screenager.csproj -c Release -r win-x64 --self-con
    ```
    screenager.exe --install
    ```
-   This registers a hidden logon scheduled task **and** adds a Defender exclusion for the folder.
-   Remove with `screenager.exe --uninstall`.
+   This registers a hidden scheduled task (at logon, then every 10 minutes; no run-time limit and
+   not stopped on battery), adds a Defender exclusion for the folder, enables crash dumps, and
+   starts it. Remove with `screenager.exe --uninstall`. **Re-run `--install` after upgrading
+   from a version without the watchdog** — the old task definition used Task Scheduler defaults
+   that kill the app after 3 days and when a laptop goes on battery.
 
 **Verify email config** without waiting for `send_hour`:
 - `screenager.exe --test-email` — sends a quick fixed test message and exits (fastest config check).
@@ -127,7 +144,8 @@ A real CA-issued certificate is only needed if you distribute the exe beyond thi
 
 ```
 src/Screenager/
-  Program.cs            entry point + CLI verbs (run / --install / --uninstall / --test-email / --report-now)
+  Program.cs            entry point + CLI verbs (run / --worker / --install / --uninstall / --test-email / --report-now)
+  Monitoring/           watchdog (restart, hang detection), crash recorder, diagnostics
   AppController.cs      wires tracker + UI + enforcement + session/power events
   Config.cs             INI-style config parser
   Native/               P/Invoke surface
