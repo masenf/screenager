@@ -95,6 +95,12 @@ public sealed class Database : IDisposable
                 reported INTEGER NOT NULL DEFAULT 0
             );
             CREATE INDEX IF NOT EXISTS crashes_unreported ON crashes(reported, id);
+            CREATE TABLE IF NOT EXISTS activity_minutes(
+                day TEXT NOT NULL,
+                minute INTEGER NOT NULL,
+                seconds INTEGER NOT NULL DEFAULT 0,
+                PRIMARY KEY(day, minute)
+            );
         """);
     }
 
@@ -156,6 +162,44 @@ public sealed class Database : IDisposable
         cmd.Parameters.AddWithValue("$d", day);
         cmd.Parameters.AddWithValue("$e", expired ? 1 : 0);
         cmd.ExecuteNonQuery();
+    }
+
+    // ---------------- activity_minutes ----------------
+    // Active seconds per minute of the logical day (minute 0 = the day's reset hour), used to
+    // draw the "when was the PC used" timeline in the report.
+    public void AddActivityMinutes(string day, IEnumerable<(int minute, int seconds)> credits)
+    {
+        using var tx = _conn.BeginTransaction();
+        using var cmd = _conn.CreateCommand();
+        cmd.Transaction = tx;
+        cmd.CommandText = """
+            INSERT INTO activity_minutes(day, minute, seconds) VALUES($d, $m, $s)
+            ON CONFLICT(day, minute) DO UPDATE SET seconds=MIN(60, seconds+$s);
+        """;
+        var pD = cmd.Parameters.Add("$d", SqliteType.Text);
+        var pM = cmd.Parameters.Add("$m", SqliteType.Integer);
+        var pS = cmd.Parameters.Add("$s", SqliteType.Integer);
+        foreach (var (minute, seconds) in credits)
+        {
+            if (seconds <= 0) continue;
+            pD.Value = day;
+            pM.Value = minute;
+            pS.Value = Math.Min(60, seconds);
+            cmd.ExecuteNonQuery();
+        }
+        tx.Commit();
+    }
+
+    public Dictionary<int, int> GetActivityMinutes(string day)
+    {
+        var map = new Dictionary<int, int>();
+        using var cmd = _conn.CreateCommand();
+        cmd.CommandText = "SELECT minute, seconds FROM activity_minutes WHERE day=$d;";
+        cmd.Parameters.AddWithValue("$d", day);
+        using var r = cmd.ExecuteReader();
+        while (r.Read())
+            map[r.GetInt32(0)] = r.GetInt32(1);
+        return map;
     }
 
     // ---------------- focus_daily ----------------

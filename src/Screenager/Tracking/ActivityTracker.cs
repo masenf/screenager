@@ -43,6 +43,10 @@ public sealed class ActivityTracker : IDisposable
     private int _audioActiveTicks;
     private int _sinceAudioPoll;
 
+    // Active seconds credited per minute of the logical day, not yet written to the DB. Feeds
+    // the report's day timeline. Fractions carry over until they add up to whole seconds.
+    private readonly Dictionary<int, double> _minuteCredit = new();
+
     // Wall-clock instant until which an active parent override suppresses bedtime locking.
     private const string OverrideUntilKey = "override_until";
     private DateTime _overrideUntil = DateTime.MinValue;
@@ -173,7 +177,11 @@ public sealed class ActivityTracker : IDisposable
         bool paused = IsPaused();
 
         if (!paused && !bedtime)
+        {
             _activeSeconds += delta;
+            int minute = (int)(now - _clock.DayStart(now)).TotalMinutes;
+            _minuteCredit[minute] = _minuteCredit.GetValueOrDefault(minute) + delta;
+        }
 
         int active = (int)Math.Round(_activeSeconds);
         int remaining = Math.Max(0, BudgetSeconds - active);
@@ -194,6 +202,7 @@ public sealed class ActivityTracker : IDisposable
                 _db.SetActiveSeconds(_day, active);
                 _lastSavedActive = active;
             }
+            FlushMinuteCredit(final: false);
             _ticksSinceSave = 0;
         }
 
@@ -204,6 +213,7 @@ public sealed class ActivityTracker : IDisposable
     {
         // Persist the day we are leaving, then load (fresh) state for the new day.
         _db.SetActiveSeconds(_day, (int)Math.Round(_activeSeconds));
+        FlushMinuteCredit(final: true);
         _day = newDay;
         var usage = _db.GetUsage(newDay);
         _activeSeconds = usage.ActiveSeconds;
@@ -214,7 +224,37 @@ public sealed class ActivityTracker : IDisposable
     }
 
     /// <summary>Flush the in-memory counter to disk (e.g. on suspend/shutdown).</summary>
-    public void Flush() => _db.SetActiveSeconds(_day, (int)Math.Round(_activeSeconds));
+    public void Flush()
+    {
+        _db.SetActiveSeconds(_day, (int)Math.Round(_activeSeconds));
+        FlushMinuteCredit(final: true);
+    }
+
+    /// <summary>
+    /// Write whole seconds of per-minute credit. Sub-second remainders are kept only for the
+    /// current minute (they may still grow); on a final flush everything is rounded out.
+    /// </summary>
+    private void FlushMinuteCredit(bool final)
+    {
+        if (_minuteCredit.Count == 0)
+            return;
+        var now = DateTime.Now;
+        int current = (int)(now - _clock.DayStart(now)).TotalMinutes;
+        var writes = new List<(int minute, int seconds)>();
+        foreach (var (minute, credit) in _minuteCredit.ToList())
+        {
+            int whole = final ? (int)Math.Round(credit) : (int)credit;
+            if (whole > 0)
+                writes.Add((minute, whole));
+            double rest = credit - whole;
+            if (!final && minute == current && rest > 0)
+                _minuteCredit[minute] = rest;
+            else
+                _minuteCredit.Remove(minute);
+        }
+        if (writes.Count > 0)
+            _db.AddActivityMinutes(_day, writes);
+    }
 
     public void Dispose()
     {
