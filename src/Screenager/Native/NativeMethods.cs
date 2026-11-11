@@ -194,4 +194,62 @@ internal static partial class NativeMethods
     [LibraryImport("user32.dll", SetLastError = true)]
     [return: MarshalAs(UnmanagedType.Bool)]
     public static partial bool UnregisterHotKey(IntPtr hWnd, int id);
+
+    // ---------------- Crash / hang diagnostics (used by the supervisor) ----------------
+    public const uint GR_GDIOBJECTS = 0;
+    public const uint GR_USEROBJECTS = 1;
+
+    /// <summary>Count of GDI or USER objects held by a process — leaks of these are a classic WinForms crash cause.</summary>
+    [LibraryImport("user32.dll")]
+    public static partial uint GetGuiResources(IntPtr hProcess, uint uiFlags);
+
+    /// <summary>Nonzero while the current session is logging off / shutting down.</summary>
+    public const int SM_SHUTTINGDOWN = 0x2000;
+
+    [LibraryImport("user32.dll")]
+    public static partial int GetSystemMetrics(int nIndex);
+
+    public delegate bool EnumWindowsProc(IntPtr hWnd, IntPtr lParam);
+
+    [DllImport("user32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    public static extern bool EnumWindows(EnumWindowsProc lpEnumFunc, IntPtr lParam);
+
+    public const uint WM_NULL = 0x0000;
+    public const uint SMTO_BLOCK = 0x0001;
+    public const uint SMTO_ABORTIFHUNG = 0x0002;
+
+    [LibraryImport("user32.dll", SetLastError = true)]
+    public static partial IntPtr SendMessageTimeoutW(
+        IntPtr hWnd, uint Msg, IntPtr wParam, IntPtr lParam, uint fuFlags, uint uTimeout, out IntPtr lpdwResult);
+
+    /// <summary>All top-level windows (visible or not) owned by <paramref name="pid"/>.</summary>
+    public static List<IntPtr> GetTopLevelWindows(int pid)
+    {
+        var result = new List<IntPtr>();
+        EnumWindows((hWnd, _) =>
+        {
+            GetWindowThreadProcessId(hWnd, out uint owner);
+            if (owner == (uint)pid)
+                result.Add(hWnd);
+            return true;
+        }, IntPtr.Zero);
+        return result;
+    }
+
+    // MiniDumpWriteDump flags: enough for WinDbg/SOS or `dotnet-dump analyze` to show managed
+    // stacks and heap objects, without the multi-hundred-MB cost of a full-memory dump.
+    public const uint MiniDumpWithDataSegs = 0x00000001;
+    public const uint MiniDumpWithHandleData = 0x00000004;
+    public const uint MiniDumpWithUnloadedModules = 0x00000020;
+    public const uint MiniDumpWithPrivateReadWriteMemory = 0x00000200;
+    public const uint MiniDumpWithFullMemoryInfo = 0x00000800;
+    public const uint MiniDumpWithThreadInfo = 0x00001000;
+
+    [DllImport("dbghelp.dll", SetLastError = true)]
+    [DefaultDllImportSearchPaths(DllImportSearchPath.System32)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    public static extern bool MiniDumpWriteDump(
+        IntPtr hProcess, uint processId, Microsoft.Win32.SafeHandles.SafeFileHandle hFile, uint dumpType,
+        IntPtr exceptionParam, IntPtr userStreamParam, IntPtr callbackParam);
 }
