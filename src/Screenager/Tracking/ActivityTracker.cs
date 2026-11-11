@@ -54,6 +54,9 @@ public sealed class ActivityTracker : IDisposable
     public bool Locked { get; set; }
     public bool Suspended { get; set; }
 
+    /// <summary>Seconds since the last keyboard/mouse input. Replaceable so tests can simulate input.</summary>
+    internal Func<double> IdleSeconds { get; set; } = NativeMethods.GetIdleSeconds;
+
     public event Action<TrackerSnapshot>? StateChanged;
 
     public ActivityTracker(Database db, Config cfg, LogicalClock clock)
@@ -156,11 +159,14 @@ public sealed class ActivityTracker : IDisposable
                 _audioActiveTicks--;
         }
 
-        bool idle = NativeMethods.GetIdleSeconds() >= _cfg.IdleThresholdSeconds;
+        bool idle = IdleSeconds() >= _cfg.IdleThresholdSeconds;
         if (!idle)
             return false; // real input — active regardless of audio
         return _audioActiveTicks <= 0; // idle: active only while audio is (recently) playing
     }
+
+    /// <summary>Run one accounting tick now (tests drive the tracker without a message loop).</summary>
+    internal void TickNow() => OnTick();
 
     private void OnTick()
     {

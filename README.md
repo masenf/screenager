@@ -69,6 +69,15 @@ dotnet publish src/Screenager/Screenager.csproj -c Release -r win-x64 --self-con
   -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -o publish
 ```
 
+**Tests** (xUnit, `tests/Screenager.Tests`) cover the promises in this README: active-time
+accounting (idle/lock pauses, per-tick cap, limit, bedtime, overrides, resume after restart),
+day rollover, config parsing, persistence, the report's contents and link safety, and the
+scheduled-task settings the watchdog relies on. CI runs them before publishing:
+
+```powershell
+dotnet test tests/Screenager.Tests/Screenager.Tests.csproj
+```
+
 ---
 
 ## Setup
@@ -156,6 +165,7 @@ src/Screenager/
   Ui/                   countdown, warning, time-up, override dialog
   Data/                 SQLite persistence
   Reporting/            browser history, report builder, Mailgun mailer, scheduler
-.github/workflows/build.yml   CI that publishes the standalone exe
+tests/Screenager.Tests/       xUnit tests (run by CI before publishing)
+.github/workflows/build.yml   CI that tests, then publishes the standalone exe
 screenager.cfg          sample configuration
 ```
